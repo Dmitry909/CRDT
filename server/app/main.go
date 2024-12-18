@@ -29,7 +29,6 @@ var allNodes = []string{}
 var nodesExceptMe = []string{}
 
 var values map[string]Entry
-var isStopped bool
 var myClock util.VectorClock
 
 var baseRetryTimeout = 500 * time.Millisecond
@@ -55,19 +54,10 @@ func init() {
 	}
 
 	values = make(map[string]Entry)
-	isStopped = false
 	myClock = util.VectorClock{Value: make([]int, len(allNodes))}
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	if isStopped {
-		mutex.Unlock()
-		http.Error(w, "node is stopped", http.StatusForbidden)
-		return
-	}
-	mutex.Unlock()
-
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		http.Error(w, "key is required", http.StatusBadRequest)
@@ -148,14 +138,6 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
-	mutex.Lock()
-	if isStopped {
-		mutex.Unlock()
-		http.Error(w, "node is stopped", http.StatusForbidden)
-		return
-	}
-	defer mutex.Unlock() // TODO сделать оптимально где надо
-
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -174,6 +156,7 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Timestamp length mismatch", http.StatusBadRequest)
 		return
 	}
+	mutex.Lock()
 	util.UpdateClock(myClock.Value, request.Timestamp)
 	for key, value := range request.Values {
 		currentValue, err := values[key]
@@ -192,6 +175,7 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("\trequest's value's:", request.Timestamp)
 		}
 	}
+	mutex.Unlock()
 
 	w.WriteHeader(http.StatusOK)
 }
