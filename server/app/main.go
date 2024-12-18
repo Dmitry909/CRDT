@@ -90,7 +90,10 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func tryToSend(address *string, payload *[]byte, retryTimeout time.Duration) {
-	resp, err := http.Post(*address, "application/json", bytes.NewBuffer(*payload))
+	client := &http.Client{
+		Timeout: 500 * time.Millisecond,
+	}
+	resp, err := client.Post(*address, "application/json", bytes.NewBuffer(*payload))
 	defer func() {
 		if err == nil {
 			resp.Body.Close()
