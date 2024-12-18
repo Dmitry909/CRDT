@@ -2,37 +2,40 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"CRDT/requests"
 	"CRDT/util"
 )
 
-type Clock struct {
-	// ??? TODO
-}
-
 type Entry struct {
 	value string
-	clock Clock
+	clock util.VectorClock
 }
 
-var values map[string]string
-var isStopped bool
 var mutex sync.Mutex
+var intNodeId int
 var port string
 var nodeId string
 var allNodes = []string{}
 var nodesExceptMe = []string{}
 
+var values map[string]string
+var isStopped bool
+var myClock util.VectorClock
+
 func init() {
-	port = os.Args[1]
+	intNodeId, _ = strconv.Atoi(os.Args[1])
+
+	port = os.Args[2]
 	nodeId = util.LocalIP + ":" + port
 
-	allNodes = util.ConvertPortsToSlice(os.Args[2])
+	allNodes = util.ConvertPortsToSlice(os.Args[3])
 
 	contains := false
 	for _, address := range allNodes {
@@ -48,6 +51,7 @@ func init() {
 
 	values = make(map[string]string)
 	isStopped = false
+	myClock = util.VectorClock{Value: make([]int, len(allNodes))}
 }
 
 func readHandler(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +71,7 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 
 	mutex.Lock()
 	value, ok := values[key]
+	mutex.Unlock()
 	if ok {
 		response := requests.Read{Value: value}
 		w.Header().Set("Content-Type", "application/json")
@@ -80,7 +85,14 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func setHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO
+	mutex.Lock()
+	util.IncreaseClock(&myClock, intNodeId)
+	mutex.Unlock()
+	// message := ...
+	for node, _ := range allNodes {
+		fmt.Println(node)
+		// TODO message to node
+	}
 }
 
 func main() {
