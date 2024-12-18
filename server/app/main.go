@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -85,13 +87,41 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func setHandler(w http.ResponseWriter, r *http.Request) {
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var request requests.SetRequest
+	err = json.Unmarshal(body, &request)
+	if err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		return
+	}
+
 	mutex.Lock()
 	util.IncreaseClock(&myClock, intNodeId)
+	broadcastRequest := map[string]interface{}{
+		"values":    request.Values,
+		"timestamp": myClock.Value,
+	}
+	payload, err := json.Marshal(broadcastRequest)
+	if err != nil {
+		fmt.Println("Error marshalling JSON:", err)
+		return
+	}
 	mutex.Unlock()
-	// message := ...
-	for node, _ := range allNodes {
-		fmt.Println(node)
-		// TODO message to node
+
+	for _, node := range allNodes {
+		resp, err := http.Post(node+"/broadcast", "application/json", bytes.NewBuffer(payload))
+		// TODO добавить добавление запроса в очередь на повторную отправку, если не получилось отправить. И сделать горутину, которая будет ретраить.
+		if err != nil {
+			fmt.Println("Error sending request:", err)
+			return
+		}
+		defer resp.Body.Close()
 	}
 }
 
