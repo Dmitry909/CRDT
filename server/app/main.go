@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"CRDT/requests"
 	"CRDT/util"
@@ -30,6 +31,8 @@ var nodesExceptMe = []string{}
 var values map[string]string
 var isStopped bool
 var myClock util.VectorClock
+
+var baseRetryTimeout = 500 * time.Millisecond
 
 func init() {
 	intNodeId, _ = strconv.Atoi(os.Args[1])
@@ -86,7 +89,23 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "key not found", http.StatusNotFound)
 }
 
+func tryToSend(address *string, payload *[]byte, retryTimeout time.Duration) {
+	resp, err := http.Post(*address, "application/json", bytes.NewBuffer(*payload))
+	defer func() {
+		if err == nil {
+			resp.Body.Close()
+		}
+	}()
+	if err != nil || resp.StatusCode == http.StatusForbidden {
+		go func() {
+			time.Sleep(retryTimeout)
+			tryToSend(address, payload, retryTimeout*2)
+		}()
+	}
+}
+
 func setHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO check PATCH request.
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Failed to read request body", http.StatusBadRequest)
@@ -115,19 +134,21 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Unlock()
 
 	for _, node := range allNodes {
-		resp, err := http.Post(node+"/broadcast", "application/json", bytes.NewBuffer(payload))
-		// TODO добавить добавление запроса в очередь на повторную отправку, если не получилось отправить. И сделать горутину, которая будет ретраить.
-		if err != nil {
-			fmt.Println("Error sending request:", err)
-			return
-		}
-		defer resp.Body.Close()
+		address := node + "/broadcast"
+		go tryToSend(&address, &payload, baseRetryTimeout)
 	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func broadcastHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO implement
 }
 
 func main() {
 	http.HandleFunc("/read", readHandler)
 	http.HandleFunc("/set", setHandler)
+	http.HandleFunc("/broadcast", broadcastHandler)
 
 	if err := http.ListenAndServe(nodeId, nil); err != nil {
 		log.Fatalf("could not start server: %s\n", err)
