@@ -97,14 +97,14 @@ func tryToSend(address *string, payload *[]byte, retryTimeout time.Duration) {
 		}
 	}()
 	if err != nil || resp.StatusCode == http.StatusForbidden {
-		fmt.Println("Failed to send message to", address, ", retrying in", retryTimeout)
+		fmt.Println("Failed to send message to", *address, ", retrying in", retryTimeout)
 		go func() {
 			time.Sleep(retryTimeout)
 			tryToSend(address, payload, retryTimeout*2)
 		}()
 		return
 	}
-	fmt.Println("Sent message to", address)
+	fmt.Println("Sent message to", *address)
 }
 
 func setHandler(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +137,7 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 	mutex.Unlock()
 
 	for _, node := range allNodes {
-		address := node + "/broadcast"
+		address := "http://" + node + "/broadcast"
 		go tryToSend(&address, &payload, baseRetryTimeout)
 	}
 
@@ -171,10 +171,10 @@ func broadcastHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Timestamp length mismatch", http.StatusBadRequest)
 		return
 	}
-	util.UpdateClock(&myClock, request.Timestamp)
+	util.UpdateClock(myClock.Value, request.Timestamp)
 	for key, value := range request.Values {
 		currentValue, err := values[key]
-		if err {
+		if err || len(currentValue.clock.Value) == 0 {
 			values[key] = Entry{value: value, clock: util.VectorClock{Value: request.Timestamp}}
 			continue
 		}

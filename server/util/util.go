@@ -42,7 +42,7 @@ func CompareClock(lhs []int, rhs []int) CompareResult {
 	couldBeLess := true
 	couldBeEqual := true
 	couldBeMore := true
-	for _, i := range lhs {
+	for i, _ := range lhs {
 		if lhs[i] < rhs[i] {
 			couldBeEqual = false
 			couldBeMore = false
@@ -71,10 +71,13 @@ func IncreaseClock(clock *VectorClock, intNodeId int) {
 	clock.Value[intNodeId]++
 }
 
-func UpdateClock(to *VectorClock, from []int) {
-	for _, i := range to.Value {
-		if to.Value[i] < from[i] {
-			to.Value[i] = from[i]
+func UpdateClock(to, from []int) {
+	if len(to) != len(from) {
+		log.Fatal("UpdateClock: len(to) != len(from):", len(to), len(from))
+	}
+	for i, _ := range to {
+		if to[i] < from[i] {
+			to[i] = from[i]
 		}
 	}
 }
