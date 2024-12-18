@@ -31,22 +31,22 @@ const (
 	Parallel
 )
 
-func CompareClock(lhs *VectorClock, rhs *VectorClock) CompareResult {
-	if len(lhs.Value) != len(rhs.Value) {
+func CompareClock(lhs []int, rhs []int) CompareResult {
+	if len(lhs) != len(rhs) {
 		log.Fatal("CompareClock called with clocks of different lengths")
 	}
-	if len(lhs.Value) == 0 {
+	if len(lhs) == 0 {
 		log.Fatal("CompareClock called with clock of 0 lengths")
 	}
 
 	couldBeLess := true
 	couldBeEqual := true
 	couldBeMore := true
-	for _, i := range lhs.Value {
-		if lhs.Value[i] < rhs.Value[i] {
+	for _, i := range lhs {
+		if lhs[i] < rhs[i] {
 			couldBeEqual = false
 			couldBeMore = false
-		} else if lhs.Value[i] > rhs.Value[i] {
+		} else if lhs[i] > rhs[i] {
 			couldBeEqual = false
 			couldBeLess = false
 		}
@@ -69,4 +69,12 @@ func IncreaseClock(clock *VectorClock, intNodeId int) {
 		log.Fatal("IncreaseClock called with wrong intNodeId")
 	}
 	clock.Value[intNodeId]++
+}
+
+func UpdateClock(to *VectorClock, from []int) {
+	for _, i := range to.Value {
+		if to.Value[i] < from[i] {
+			to.Value[i] = from[i]
+		}
+	}
 }

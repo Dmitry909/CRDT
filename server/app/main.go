@@ -28,7 +28,7 @@ var nodeId string
 var allNodes = []string{}
 var nodesExceptMe = []string{}
 
-var values map[string]string
+var values map[string]Entry
 var isStopped bool
 var myClock util.VectorClock
 
@@ -54,7 +54,7 @@ func init() {
 		log.Fatal("Wrong port " + port)
 	}
 
-	values = make(map[string]string)
+	values = make(map[string]Entry)
 	isStopped = false
 	myClock = util.VectorClock{Value: make([]int, len(allNodes))}
 }
@@ -78,7 +78,7 @@ func readHandler(w http.ResponseWriter, r *http.Request) {
 	value, ok := values[key]
 	mutex.Unlock()
 	if ok {
-		response := requests.Read{Value: value}
+		response := requests.Read{Value: value.value}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(response); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -97,11 +97,14 @@ func tryToSend(address *string, payload *[]byte, retryTimeout time.Duration) {
 		}
 	}()
 	if err != nil || resp.StatusCode == http.StatusForbidden {
+		fmt.Println("Failed to send message to", address, ", retrying in", retryTimeout)
 		go func() {
 			time.Sleep(retryTimeout)
 			tryToSend(address, payload, retryTimeout*2)
 		}()
+		return
 	}
+	fmt.Println("Sent message to", address)
 }
 
 func setHandler(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +145,52 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func broadcastHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO implement
+	mutex.Lock()
+	if isStopped {
+		mutex.Unlock()
+		http.Error(w, "node is stopped", http.StatusForbidden)
+		return
+	}
+	defer mutex.Unlock() // TODO сделать оптимально где надо
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	var request requests.BroadcastRequest
+	err = json.Unmarshal(body, &request)
+	if err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		return
+	}
+
+	if len(request.Timestamp) != len(myClock.Value) {
+		http.Error(w, "Timestamp length mismatch", http.StatusBadRequest)
+		return
+	}
+	util.UpdateClock(&myClock, request.Timestamp)
+	for key, value := range request.Values {
+		currentValue, err := values[key]
+		if err {
+			values[key] = Entry{value: value, clock: util.VectorClock{Value: request.Timestamp}}
+			continue
+		}
+		compareResult := util.CompareClock(currentValue.clock.Value, request.Timestamp)
+		if compareResult == util.Less {
+			values[key] = Entry{value: value, clock: util.VectorClock{Value: request.Timestamp}}
+			continue
+		}
+		if compareResult == util.Parallel || compareResult == util.Equal {
+			fmt.Println("!! Uncomparable clocks for key", key, ":")
+			fmt.Println("\tmy value's:       ", currentValue.clock.Value)
+			fmt.Println("\trequest's value's:", request.Timestamp)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
